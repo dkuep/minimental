@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KJP Finder - Psychiatrische Hilfe für Kinder und Jugendliche</title>
+    
+    <!-- Vue.js -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="app" class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8">KJP Finder</h1>
+        
+        <div class="bg-white rounded-lg shadow p-6">
+            <div class="mb-4">
+                <label for="postcode" class="block text-sm font-medium text-gray-700">Postleitzahl eingeben:</label>
+                <input 
+                    type="text" 
+                    id="postcode" 
+                    v-model="postcode"
+                    @input="validatePostcode"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="12345"
+                >
+            </div>
+            
+            <div id="map" class="h-96 w-full rounded-lg mb-4"></div>
+
+            <!-- Add results section -->
+            <div v-if="facilities.length > 0" class="mt-4">
+                <h2 class="text-xl font-semibold mb-3">Gefundene Einrichtungen:</h2>
+                <div v-for="facility in facilities" :key="facility.name" class="border-b py-4">
+                    <h3 class="font-bold">{{ facility.name }}</h3>
+                    <p class="text-gray-600">{{ facility.address }}</p>
+                    <p class="text-gray-600">Tel: {{ facility.phone }}</p>
+                    <a :href="facility.website" target="_blank" class="text-blue-500 hover:underline">Website besuchen</a>
+                </div>
+            </div>
+
+            <div v-if="error" class="mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
+                {{ error }}
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { plzToLandkreis, landkreisToKJP } from './data/plz-lk-mapping.js';
+        
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    postcode: '',
+                    map: null,
+                    markers: [],
+                    facilities: [],
+                    error: null
+                }
+            },
+            mounted() {
+                // Initialize map
+                this.map = L.map('map').setView([51.1657, 10.4515], 6);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(this.map);
+            },
+            methods: {
+                validatePostcode() {
+                    // Clear previous results
+                    this.facilities = [];
+                    this.error = null;
+                    this.clearMarkers();
+
+                    // Basic validation for German postcodes
+                    const postcodeRegex = /^[0-9]{5}$/;
+                    if (!postcodeRegex.test(this.postcode)) {
+                        this.error = "Bitte geben Sie eine gültige Postleitzahl ein (5 Ziffern)";
+                        return;
+                    }
+
+                    this.findFacilities(this.postcode);
+                },
+                findFacilities(postcode) {
+                    const landkreis = plzToLandkreis[postcode];
+                    if (!landkreis) {
+                        this.error = "Leider konnte kein Landkreis für diese Postleitzahl gefunden werden.";
+                        return;
+                    }
+
+                    const facilities = landkreisToKJP[landkreis];
+                    if (!facilities || facilities.length === 0) {
+                        this.error = "Leider wurden keine KJP-Einrichtungen in diesem Landkreis gefunden.";
+                        return;
+                    }
+
+                    this.facilities = facilities;
+                    this.showFacilitiesOnMap(facilities);
+                },
+                showFacilitiesOnMap(facilities) {
+                    this.clearMarkers();
+                    
+                    const bounds = L.latLngBounds();
+                    facilities.forEach(facility => {
+                        const marker = L.marker(facility.coordinates)
+                            .bindPopup(`<b>${facility.name}</b><br>${facility.address}<br>Tel: ${facility.phone}`)
+                            .addTo(this.map);
+                        
+                        this.markers.push(marker);
+                        bounds.extend(facility.coordinates);
+                    });
+
+                    this.map.fitBounds(bounds, { padding: [50, 50] });
+                },
+                clearMarkers() {
+                    this.markers.forEach(marker => marker.remove());
+                    this.markers = [];
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html> 
