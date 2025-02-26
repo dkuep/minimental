@@ -28,4 +28,24 @@ export const landkreisToKJP = {
         }
     ],
     // ... more KJPs
-}; 
+};
+
+export async function getDistrictFromPostcode(postcode) {
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${postcode}&country=DE&format=json`);
+        const data = await response.json();
+        
+        if (data && data[0]) {
+            // Extract district info from address
+            const address = data[0].display_name;
+            const parts = address.split(', ');
+            // Usually the district is the second-to-last part before the country
+            const district = parts[parts.length - 3];
+            return district;
+        }
+        return null;
+    } catch (error) {
+        console.error('Error fetching district:', error);
+        return null;
+    }
+} 

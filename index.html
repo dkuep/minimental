@@ -51,7 +51,7 @@
     </div>
 
     <script type="module">
-        import { plzToLandkreis, landkreisToKJP } from './data/plz-lk-mapping.js';
+        import { landkreisToKJP, getDistrictFromPostcode } from './data/plz-lk-mapping.js';
         
         const { createApp } = Vue
 
@@ -62,7 +62,8 @@
                     map: null,
                     markers: [],
                     facilities: [],
-                    error: null
+                    error: null,
+                    isLoading: false
                 }
             },
             mounted() {
@@ -73,7 +74,7 @@
                 }).addTo(this.map);
             },
             methods: {
-                validatePostcode() {
+                async validatePostcode() {
                     // Clear previous results
                     this.facilities = [];
                     this.error = null;
@@ -86,23 +87,34 @@
                         return;
                     }
 
-                    this.findFacilities(this.postcode);
+                    await this.findFacilities(this.postcode);
                 },
-                findFacilities(postcode) {
-                    const landkreis = plzToLandkreis[postcode];
-                    if (!landkreis) {
-                        this.error = "Leider konnte kein Landkreis für diese Postleitzahl gefunden werden.";
-                        return;
-                    }
+                async findFacilities(postcode) {
+                    this.isLoading = true;
+                    try {
+                        const district = await getDistrictFromPostcode(postcode);
+                        
+                        if (!district) {
+                            this.error = "Leider konnte kein Landkreis für diese Postleitzahl gefunden werden.";
+                            return;
+                        }
 
-                    const facilities = landkreisToKJP[landkreis];
-                    if (!facilities || facilities.length === 0) {
-                        this.error = "Leider wurden keine KJP-Einrichtungen in diesem Landkreis gefunden.";
-                        return;
-                    }
+                        console.log('Found district:', district); // Debug info
 
-                    this.facilities = facilities;
-                    this.showFacilitiesOnMap(facilities);
+                        const facilities = landkreisToKJP[district];
+                        if (!facilities || facilities.length === 0) {
+                            this.error = `Leider wurden keine KJP-Einrichtungen in ${district} gefunden.`;
+                            return;
+                        }
+
+                        this.facilities = facilities;
+                        this.showFacilitiesOnMap(facilities);
+                    } catch (error) {
+                        this.error = "Es ist ein Fehler bei der Suche aufgetreten. Bitte versuchen Sie es später erneut.";
+                        console.error(error);
+                    } finally {
+                        this.isLoading = false;
+                    }
                 },
                 showFacilitiesOnMap(facilities) {
                     this.clearMarkers();
