@@ -41,6 +41,18 @@ class PostcodeCache {
         this.cache.set(key, value);
         this.saveToLocalStorage();
     }
+
+    delete(key) {
+        this.cache.delete(key);
+        this.saveToLocalStorage();
+    }
+
+    getAllEntries() {
+        return Array.from(this.cache.entries()).map(([key, value]) => ({
+            postcode: key,
+            ...value
+        }));
+    }
 }
 
 // Rate limiter implementation
@@ -73,15 +85,15 @@ const districtNormalizations = {
 function normalizeDistrict(district) {
     let normalized = district;
     
-    // Remove common prefixes
+    // Remove common prefixes but keep special characters
     for (const [pattern, replacement] of Object.entries(districtNormalizations)) {
         const regex = new RegExp(`^${pattern}\\s+`, 'i');
         normalized = normalized.replace(regex, `${replacement} `);
     }
     
-    // Remove special characters and extra spaces
+    // Only remove unwanted characters but keep äöüß
     normalized = normalized
-        .replace(/[^\w\s-]/g, '')
+        .replace(/[^a-zA-ZäöüßÄÖÜ\s-]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
     
@@ -124,22 +136,31 @@ export const landkreisToKJP = {
     // ... more KJPs
 };
 
-export async function getDistrictFromPostcode(postcode) {
+export async function getDistrictFromPostcode(postcode, forceRefresh = false) {
     try {
-        // Check cache first
-        const cachedResult = cache.get(postcode);
+        // Check cache first (unless force refresh)
+        const cachedResult = !forceRefresh && cache.get(postcode);
         if (cachedResult) {
-            console.log('Cache hit for:', postcode);
-            return {
-                district: cachedResult,
-                debug: { source: 'cache' }
-            };
+            // Validate cached data
+            if (cachedResult.rawResponse && cachedResult.rawResponse.length > 0) {
+                console.log('Cache hit for:', postcode);
+                return {
+                    district: cachedResult.district,
+                    debug: { 
+                        source: 'cache',
+                        ...cachedResult
+                    }
+                };
+            } else {
+                // Invalid cache data, remove it
+                cache.delete(postcode);
+            }
         }
 
         // Wait for rate limiter
         await rateLimiter.waitForNext();
 
-        // Make API request with proper User-Agent
+        // Make API request
         const response = await fetch(
             `https://nominatim.openstreetmap.org/search?postalcode=${postcode}&country=DE&format=json`,
             {
@@ -155,29 +176,35 @@ export async function getDistrictFromPostcode(postcode) {
 
         const data = await response.json();
         
-        if (data && data[0]) {
-            const address = data[0].display_name;
-            const parts = address.split(', ');
-            const district = parts[parts.length - 3];
-            const normalizedDistrict = normalizeDistrict(district);
-            
-            // Cache the result
-            cache.set(postcode, normalizedDistrict);
-            
-            return {
-                district: normalizedDistrict,
-                debug: {
-                    source: 'api',
-                    rawResponse: data,
-                    fullAddress: address
-                }
-            };
+        if (!data || data.length === 0) {
+            // Retry once if no results
+            if (!forceRefresh) {
+                return getDistrictFromPostcode(postcode, true);
+            }
+            throw new Error('No results found');
         }
+
+        const result = data[0];
+        const address = result.display_name;
+        const parts = address.split(', ');
+        const district = parts[parts.length - 3];
+        const normalizedDistrict = normalizeDistrict(district);
+        
+        const resultData = {
+            district: normalizedDistrict,
+            rawResponse: data,
+            fullAddress: address,
+            boundingbox: result.boundingbox
+        };
+        
+        // Cache the result
+        cache.set(postcode, resultData);
+        
         return {
-            district: null,
+            ...resultData,
             debug: {
                 source: 'api',
-                rawResponse: data
+                ...resultData
             }
         };
     } catch (error) {
