@@ -36,6 +36,24 @@
             
             <div id="map" class="h-96 w-full rounded-lg mb-4"></div>
 
+            <!-- Add debug section -->
+            <div v-if="debugInfo" class="mt-4 p-4 bg-gray-100 rounded-lg">
+                <h3 class="font-bold mb-2">Debug Information:</h3>
+                <div class="text-sm font-mono whitespace-pre-wrap">
+                    <p>Source: {{ debugInfo.source }}</p>
+                    <template v-if="debugInfo.fullAddress">
+                        <p>Full Address: {{ debugInfo.fullAddress }}</p>
+                    </template>
+                    <template v-if="debugInfo.rawResponse">
+                        <p class="mt-2">Raw Response:</p>
+                        <pre class="bg-gray-200 p-2 rounded mt-1 overflow-x-auto">{{ JSON.stringify(debugInfo.rawResponse, null, 2) }}</pre>
+                    </template>
+                    <template v-if="debugInfo.error">
+                        <p class="text-red-600">Error: {{ debugInfo.error }}</p>
+                    </template>
+                </div>
+            </div>
+
             <!-- Add results section -->
             <div v-if="facilities.length > 0" class="mt-4">
                 <h2 class="text-xl font-semibold mb-3">Gefundene Einrichtungen:</h2>
@@ -67,7 +85,8 @@
                     facilities: [],
                     error: null,
                     isLoading: false,
-                    isCached: false
+                    isCached: false,
+                    debugInfo: null
                 }
             },
             mounted() {
@@ -96,28 +115,30 @@
                 async findFacilities(postcode) {
                     this.isLoading = true;
                     this.isCached = false;
+                    this.debugInfo = null;
                     try {
-                        // Check if result is in cache before making request
-                        this.isCached = debugCache.get(postcode) !== undefined;
+                        const result = await getDistrictFromPostcode(postcode);
+                        this.debugInfo = result.debug;
+                        this.isCached = result.debug.source === 'cache';
                         
-                        const district = await getDistrictFromPostcode(postcode);
-                        
-                        const landkreis = plzToLandkreis[postcode];
-                        if (!landkreis) {
+                        if (!result.district) {
                             this.error = "Leider konnte kein Landkreis für diese Postleitzahl gefunden werden.";
                             return;
                         }
 
-                        const facilities = landkreisToKJP[landkreis];
+                        console.log('Found district:', result.district);
+
+                        const facilities = landkreisToKJP[result.district];
                         if (!facilities || facilities.length === 0) {
-                            this.error = "Leider wurden keine KJP-Einrichtungen in diesem Landkreis gefunden.";
+                            this.error = `Leider wurden keine KJP-Einrichtungen in ${result.district} gefunden.`;
                             return;
                         }
 
                         this.facilities = facilities;
                         this.showFacilitiesOnMap(facilities);
                     } catch (error) {
-                        this.error = "Es ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut.";
+                        this.error = "Es ist ein Fehler bei der Suche aufgetreten. Bitte versuchen Sie es später erneut.";
+                        console.error(error);
                     } finally {
                         this.isLoading = false;
                     }

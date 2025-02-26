@@ -130,7 +130,10 @@ export async function getDistrictFromPostcode(postcode) {
         const cachedResult = cache.get(postcode);
         if (cachedResult) {
             console.log('Cache hit for:', postcode);
-            return cachedResult;
+            return {
+                district: cachedResult,
+                debug: { source: 'cache' }
+            };
         }
 
         // Wait for rate limiter
@@ -156,19 +159,36 @@ export async function getDistrictFromPostcode(postcode) {
             const address = data[0].display_name;
             const parts = address.split(', ');
             const district = parts[parts.length - 3];
-            
-            // Normalize district name
             const normalizedDistrict = normalizeDistrict(district);
             
             // Cache the result
             cache.set(postcode, normalizedDistrict);
             
-            return normalizedDistrict;
+            return {
+                district: normalizedDistrict,
+                debug: {
+                    source: 'api',
+                    rawResponse: data,
+                    fullAddress: address
+                }
+            };
         }
-        return null;
+        return {
+            district: null,
+            debug: {
+                source: 'api',
+                rawResponse: data
+            }
+        };
     } catch (error) {
         console.error('Error fetching district:', error);
-        return null;
+        return {
+            district: null,
+            debug: {
+                source: 'error',
+                error: error.message
+            }
+        };
     }
 }
 
