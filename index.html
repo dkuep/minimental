@@ -29,6 +29,9 @@
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     placeholder="12345"
                 >
+                <p v-if="isCached" class="text-sm text-gray-500 mt-1">
+                    ⚡ Ergebnis aus Cache geladen
+                </p>
             </div>
             
             <div id="map" class="h-96 w-full rounded-lg mb-4"></div>
@@ -51,7 +54,7 @@
     </div>
 
     <script type="module">
-        import { landkreisToKJP, getDistrictFromPostcode } from './data/plz-lk-mapping.js';
+        import { plzToLandkreis, landkreisToKJP, getDistrictFromPostcode, debugCache } from './data/plz-lk-mapping.js';
         
         const { createApp } = Vue
 
@@ -63,7 +66,8 @@
                     markers: [],
                     facilities: [],
                     error: null,
-                    isLoading: false
+                    isLoading: false,
+                    isCached: false
                 }
             },
             mounted() {
@@ -74,7 +78,7 @@
                 }).addTo(this.map);
             },
             methods: {
-                async validatePostcode() {
+                validatePostcode() {
                     // Clear previous results
                     this.facilities = [];
                     this.error = null;
@@ -87,31 +91,33 @@
                         return;
                     }
 
-                    await this.findFacilities(this.postcode);
+                    this.findFacilities(this.postcode);
                 },
                 async findFacilities(postcode) {
                     this.isLoading = true;
+                    this.isCached = false;
                     try {
+                        // Check if result is in cache before making request
+                        this.isCached = debugCache.get(postcode) !== undefined;
+                        
                         const district = await getDistrictFromPostcode(postcode);
                         
-                        if (!district) {
+                        const landkreis = plzToLandkreis[postcode];
+                        if (!landkreis) {
                             this.error = "Leider konnte kein Landkreis für diese Postleitzahl gefunden werden.";
                             return;
                         }
 
-                        console.log('Found district:', district); // Debug info
-
-                        const facilities = landkreisToKJP[district];
+                        const facilities = landkreisToKJP[landkreis];
                         if (!facilities || facilities.length === 0) {
-                            this.error = `Leider wurden keine KJP-Einrichtungen in ${district} gefunden.`;
+                            this.error = "Leider wurden keine KJP-Einrichtungen in diesem Landkreis gefunden.";
                             return;
                         }
 
                         this.facilities = facilities;
                         this.showFacilitiesOnMap(facilities);
                     } catch (error) {
-                        this.error = "Es ist ein Fehler bei der Suche aufgetreten. Bitte versuchen Sie es später erneut.";
-                        console.error(error);
+                        this.error = "Es ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut.";
                     } finally {
                         this.isLoading = false;
                     }
