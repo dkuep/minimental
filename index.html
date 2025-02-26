@@ -29,18 +29,29 @@
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     placeholder="12345"
                 >
-                <p v-if="isCached" class="text-sm text-gray-500 mt-1">
-                    ⚡ Ergebnis aus Cache geladen
-                </p>
             </div>
             
             <div id="map" class="h-96 w-full rounded-lg mb-4"></div>
 
-            <!-- Debug section -->
-            <div v-if="debugInfo" class="mt-4 p-4 bg-gray-100 rounded-lg">
+            <!-- Results Section -->
+            <div v-if="facilities.length > 0" class="mt-4 mb-4">
+                <h2 class="text-xl font-semibold mb-3">Gefundene Einrichtungen:</h2>
+                <div v-for="facility in facilities" :key="facility.name" class="border-b py-4">
+                    <h3 class="font-bold">{{ facility.name }}</h3>
+                    <p class="text-gray-600">{{ facility.address }}</p>
+                    <p class="text-gray-600">Tel: {{ facility.phone }}</p>
+                    <a :href="facility.website" target="_blank" class="text-blue-500 hover:underline">Website besuchen</a>
+                </div>
+            </div>
+
+            <!-- Debug Section - Always visible -->
+            <div class="mt-4 p-4 bg-gray-100 rounded-lg">
                 <h3 class="font-bold mb-2">Debug Information:</h3>
-                <div class="text-sm font-mono whitespace-pre-wrap">
+                <div v-if="debugInfo" class="text-sm font-mono whitespace-pre-wrap">
                     <p>Source: {{ debugInfo.source }}</p>
+                    <template v-if="debugInfo.name">
+                        <p>Name: {{ debugInfo.name }}</p>
+                    </template>
                     <template v-if="debugInfo.fullAddress">
                         <p>Full Address: {{ debugInfo.fullAddress }}</p>
                     </template>
@@ -53,52 +64,30 @@
                     </template>
                 </div>
 
-                <!-- Cache Explorer -->
+                <!-- Cache Explorer - Always visible -->
                 <div class="mt-4">
-                    <button 
-                        @click="showCacheExplorer = !showCacheExplorer"
-                        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-                    >
-                        {{ showCacheExplorer ? 'Hide' : 'Show' }} Cache Explorer
-                    </button>
-                    
-                    <div v-if="showCacheExplorer" class="mt-2">
-                        <div v-for="(entry, index) in cacheEntries" :key="entry.postcode" class="mb-2">
-                            <div 
-                                @click="expandedCacheEntry = expandedCacheEntry === index ? null : index"
-                                class="cursor-pointer p-2 bg-gray-200 rounded flex justify-between items-center"
-                            >
-                                <span>{{ index + 1 }}. PLZ: {{ entry.postcode }}</span>
-                                <span>{{ expandedCacheEntry === index ? '▼' : '▶' }}</span>
-                            </div>
-                            <pre 
-                                v-if="expandedCacheEntry === index"
-                                class="mt-1 p-2 bg-gray-100 rounded overflow-x-auto"
-                            >{{ JSON.stringify(entry, null, 2) }}</pre>
+                    <h3 class="font-bold mb-2">Cache Explorer</h3>
+                    <div v-for="(entry, index) in cacheEntries" :key="entry.postcode" class="mb-2">
+                        <div 
+                            @click="expandedCacheEntry = expandedCacheEntry === index ? null : index"
+                            class="cursor-pointer p-2 bg-gray-200 rounded flex justify-between items-center"
+                        >
+                            <span>{{ entry.postcode }}</span>
+                            <span>{{ expandedCacheEntry === index ? '▼' : '▶' }}</span>
                         </div>
+                        <pre 
+                            v-if="expandedCacheEntry === index"
+                            class="mt-1 p-2 bg-gray-100 rounded overflow-x-auto"
+                        >{{ JSON.stringify(entry, null, 2) }}</pre>
                     </div>
                 </div>
-            </div>
-
-            <!-- Add results section -->
-            <div v-if="facilities.length > 0" class="mt-4">
-                <h2 class="text-xl font-semibold mb-3">Gefundene Einrichtungen:</h2>
-                <div v-for="facility in facilities" :key="facility.name" class="border-b py-4">
-                    <h3 class="font-bold">{{ facility.name }}</h3>
-                    <p class="text-gray-600">{{ facility.address }}</p>
-                    <p class="text-gray-600">Tel: {{ facility.phone }}</p>
-                    <a :href="facility.website" target="_blank" class="text-blue-500 hover:underline">Website besuchen</a>
-                </div>
-            </div>
-
-            <div v-if="error" class="mt-4 p-4 bg-red-100 text-red-700 rounded-lg">
-                {{ error }}
             </div>
         </div>
     </div>
 
     <script type="module">
-        import { plzToLandkreis, landkreisToKJP, getDistrictFromPostcode, debugCache } from './data/plz-lk-mapping.js';
+        import { landkreisToKJP } from './data/kjp-facilities.js';
+        import { getDistrictFromPostcode, debugCache } from './data/plz-lk-mapping.js';
         
         const { createApp } = Vue
 
@@ -166,12 +155,12 @@
 
                         this.facilities = facilities;
                         
-                        // Update map with boundingbox if available
+                        // Update map with boundingbox
                         if (result.boundingbox) {
-                            const bounds = [
-                                [result.boundingbox[0], result.boundingbox[2]], // south west
-                                [result.boundingbox[1], result.boundingbox[3]]  // north east
-                            ];
+                            const bounds = L.latLngBounds(
+                                [parseFloat(result.boundingbox[0]), parseFloat(result.boundingbox[2])],
+                                [parseFloat(result.boundingbox[1]), parseFloat(result.boundingbox[3])]
+                            );
                             this.map.fitBounds(bounds);
                         }
                         

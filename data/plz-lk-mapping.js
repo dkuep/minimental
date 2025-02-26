@@ -1,3 +1,5 @@
+import { landkreisToKJP } from './kjp-facilities.js';
+
 // Cache implementation
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
@@ -74,28 +76,30 @@ class RateLimiter {
     }
 }
 
-// District name normalization
+// Enhanced district normalizations
 const districtNormalizations = {
-    'Landkreis': 'LK',
     'Kreisfreie Stadt': 'SK',
     'Stadt': 'SK',
-    // Add more normalizations as needed
+    'Landkreis': 'LK',
+    'Kreis': 'LK'
 };
 
 function normalizeDistrict(district) {
     let normalized = district;
     
-    // Remove common prefixes but keep special characters
+    // First try to match known patterns
     for (const [pattern, replacement] of Object.entries(districtNormalizations)) {
-        const regex = new RegExp(`^${pattern}\\s+`, 'i');
-        normalized = normalized.replace(regex, `${replacement} `);
+        const regex = new RegExp(`^${pattern}\\s+(.+)$`, 'i');
+        const match = normalized.match(regex);
+        if (match) {
+            return `${replacement} ${match[1]}`;
+        }
     }
     
-    // Only remove unwanted characters but keep äöüß
-    normalized = normalized
-        .replace(/[^a-zA-ZäöüßÄÖÜ\s-]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+    // If no pattern matched, assume it's a Landkreis
+    if (!normalized.startsWith('SK ') && !normalized.startsWith('LK ')) {
+        normalized = `LK ${normalized}`;
+    }
     
     return normalized;
 }
@@ -112,28 +116,6 @@ export const plzToLandkreis = {
     "20095": "SK Hamburg",
     "80331": "SK München",
     // ... more mappings
-};
-
-export const landkreisToKJP = {
-    "SK Dresden": [
-        {
-            name: "Klinik und Poliklinik für Kinder- und Jugendpsychiatrie und -psychotherapie, Universitätsklinikum Dresden",
-            address: "Schubertstraße 42, 01307 Dresden",
-            phone: "0351 458-2044",
-            website: "https://www.uniklinikum-dresden.de/de/das-klinikum/kliniken-polikliniken-institute/kjp",
-            coordinates: [51.0504, 13.7595]
-        }
-    ],
-    "SK Berlin": [
-        {
-            name: "Charité - Klinik für Psychiatrie, Psychosomatik und Psychotherapie des Kindes- und Jugendalters",
-            address: "Augustenburger Platz 1, 13353 Berlin",
-            phone: "030 450 566 111",
-            website: "https://kjp.charite.de",
-            coordinates: [52.5429, 13.3401]
-        }
-    ],
-    // ... more KJPs
 };
 
 export async function getDistrictFromPostcode(postcode, forceRefresh = false) {
@@ -177,7 +159,6 @@ export async function getDistrictFromPostcode(postcode, forceRefresh = false) {
         const data = await response.json();
         
         if (!data || data.length === 0) {
-            // Retry once if no results
             if (!forceRefresh) {
                 return getDistrictFromPostcode(postcode, true);
             }
@@ -187,11 +168,14 @@ export async function getDistrictFromPostcode(postcode, forceRefresh = false) {
         const result = data[0];
         const address = result.display_name;
         const parts = address.split(', ');
+        
+        // Extract and normalize district name
         const district = parts[parts.length - 3];
         const normalizedDistrict = normalizeDistrict(district);
         
         const resultData = {
             district: normalizedDistrict,
+            name: parts.slice(0, -2).join(', '), // Concatenate location names
             rawResponse: data,
             fullAddress: address,
             boundingbox: result.boundingbox
